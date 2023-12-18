@@ -346,3 +346,12 @@ def backtest(pair1,pair2,df):
 
   return df_res,ptf
 
+df_res,pt = backtest('GBPCHF=X','NZDUSD=X',df_histo)
+
+print(df_res)
+
+gbpchf_nzdusd,_ ,_ , _, _, _, _ = VAR_pred('GBPCHF=X','NZDUSD=X')
+gbpcad_nzdusd,_ ,_ , _, _, _, _= VAR_pred('GBPCAD=X','NZDUSD=X')
+eurcad_gbpchf,_ ,_ , _, _, _, _= VAR_pred('EURCAD=X','GBPCHF=X')
+eurcad_eurchf,_ ,_ , _, _, _, _ = VAR_pred('EURCAD=X','EURCHF=X')
+gbpchf_gbpcad,_ ,_ , _, _, _, _= VAR_pred('GBPCHF=X','GBPCAD=X')
