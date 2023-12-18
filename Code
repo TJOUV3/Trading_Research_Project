@@ -1,0 +1,348 @@
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.stattools import coint
+from statsmodels.tsa.stattools import adfuller
+import seaborn as sns
+import yfinance as yf
+import matplotlib.pyplot as plt
+
+def history(self, period="1mo", interval="1d",
+            start=None, end=None, prepost=False, actions=True,
+            auto_adjust=True, back_adjust=False,
+            proxy=None, rounding=False, tz=None, timeout=None, **kwargs):
+    """
+    :Parameters:
+        period : str
+            Valid periods: 1d,5d,1mo,3mo,6mo,1y,2y,5y,10y,ytd,max
+            Either Use period parameter or use start and end
+        interval : str
+            Valid intervals: 1m,2m,5m,15m,30m,60m,90m,1h,1d,5d,1wk,1mo,3mo
+            Intraday data cannot extend last 60 days
+        start: str
+            Download start date string (YYYY-MM-DD) or _datetime.
+            Default is 1900-01-01
+        end: str
+            Download end date string (YYYY-MM-DD) or _datetime.
+            Default is now
+        prepost : bool
+            Include Pre and Post market data in results?
+            Default is False
+        auto_adjust: bool
+            Adjust all OHLC automatically? Default is True
+        back_adjust: bool
+            Back-adjusted data to mimic true historical prices
+        proxy: str
+            Optional. Proxy server URL scheme. Default is None
+        rounding: bool
+            Round values to 2 decimal places?
+            Optional. Default is False = precision suggested by Yahoo!
+        tz: str
+            Optional timezone locale for dates.
+            (default data is returned as non-localized dates)
+        timeout: None or float
+            If not None stops waiting for a response after given number of
+            seconds. (Can also be a fraction of a second e.g. 0.01)
+            Default is None.
+        **kwargs: dict
+            debug: bool
+                Optional. If passed as False, will suppress
+                error message printing to console.
+    """
+
+#https://www.statsmodels.org/dev/generated/statsmodels.tsa.stattools.adfuller.html
+
+usd_pairs = [
+    'EURUSD=X', 'USDJPY=X', 'GBPUSD=X', 'USDCHF=X', 'AUDUSD=X',
+    'USDCAD=X', 'NZDUSD=X', 'EURJPY=X', 'GBPJPY=X', 'AUDJPY=X',
+    'USDCNY=X', 'USDBRL=X', 'USDINR=X', 'USDRUB=X', 'USDZAR=X',
+    'USDTRY=X', 'USDMXN=X', 'USDSEK=X', 'USDNOK=X', 'USDPLN=X',
+]
+
+eur_pairs = [
+    'EURUSD=X', 'EURJPY=X', 'EURGBP=X', 'EURCHF=X', 'EURAUD=X',
+    'EURCAD=X', 'EURNZD=X', 'EURUSD=X', 'EURJPY=X', 'EURGBP=X',
+    'EURCNY=X', 'EURBRL=X', 'EURINR=X', 'EURRUB=X', 'EURZAR=X',
+]
+
+
+gbp_pairs = [
+    'GBPUSD=X', 'GBPJPY=X', 'GBPEUR=X', 'GBPCHF=X', 'GBPAUD=X',
+    'GBPCAD=X', 'GBPNZD=X', 'GBPUSD=X', 'GBPJPY=X', 'GBPEUR=X',
+]
+
+# Combine the lists
+all_pairs = usd_pairs + eur_pairs + gbp_pairs
+
+# Create Ticker objects for each forex pair
+forex_tickers = {pair: yf.Ticker(pair) for pair in all_pairs}
+
+# Create a dictionary to store historical data for each pair
+historical_data =  {}
+
+# Fetch and store historical data for each pair
+for pair, ticker in forex_tickers.items():
+    data = ticker.history(interval='5m', start='2023-12-01', end='2023-12-08')
+    #data = ticker.history(interval='5m', start='2023-11-15', end='2023-11-23')
+    #data = ticker.history(interval='5m',period='1w')
+    historical_data[pair] = data['Close']
+    #print(pair,len(data['Close']))
+
+
+print(historical_data)
+df_histo = pd.DataFrame(historical_data)
+df_histo = df_histo.ffill()
+df_histo = df_histo.bfill()
+
+# Create a matrix to store p-values for ADF test
+num_pairs = len(all_pairs)
+cointegration_matrix = pd.DataFrame(index=all_pairs, columns=all_pairs)
+cointegration_ratio = pd.DataFrame(index=all_pairs, columns=all_pairs)
+# Perform ADF test and fill in the matrix
+for pair1 in all_pairs:
+    for pair2 in all_pairs:
+        if pair1 != pair2:  # Avoid testing the same pair against itself
+            #print(df_histo[pair1].isna().sum, np.isinf(df_histo[pair1]).sum())
+            #print(df_histo[pair2].isna().sum, np.isinf(df_histo[pair2]).sum())
+            series1 = df_histo[pair1]
+            series2 = df_histo[pair2]
+            # Perform ADF test
+            crit, p_value, _, _, critical_values, _ = adfuller(series1 - series2)
+
+            if crit < critical_values['1%'] and crit < critical_values['5%'] and crit < critical_values['10%'] and p_value < 0.05 :
+              statio = True
+            else:
+              statio =False
+              coint = 0
+            #print(pair1,pair2)
+            #print(crit,critical_values)
+            # Store p-value in the matrix
+
+
+            cointegration_matrix.loc[pair1, pair2] = statio
+
+print(cointegration_matrix)
+
+# Create a figure and axis for the first pair (NZDUSD)
+fig, ax1 = plt.subplots(figsize=(10, 6))
+
+# Plot NZDUSD on the left axis
+ax1.plot(df_histo['NZDUSD=X'], color='blue', label=pair2)
+ax1.set_xlabel('Date')
+ax1.set_ylabel(pair2, color='blue')
+ax1.tick_params(axis='y', labelcolor='blue')
+
+# Create a second axis for the second pair (GBPCHF) sharing the same x-axis
+ax2 = ax1.twinx()
+ax2.plot(df_histo['GBPCHF=X'], color='green', label=pair1)
+ax2.set_ylabel(pair1, color='green')
+ax2.tick_params(axis='y', labelcolor='green')
+
+# Add title and legend
+plt.title('Historical Data for NZDUSD and GBPCHF (Dual Y-axis)')
+plt.legend(loc='upper left', bbox_to_anchor=(0.75, 0.95))
+
+# Show the plot
+plt.show()
+
+from statsmodels.tsa.api import VAR
+from statsmodels.tools.eval_measures import rmse
+
+
+def VAR_pred(pair1,pair2):
+  data = pd.DataFrame()
+  data[f'{pair1}'] = df_histo[pair1]
+  data[f'{pair2}'] = df_histo[pair2]
+
+  # Division des données en ensembles d'entraînement et de test
+  train_size = int(len(data) * 0.7)
+  train, test = data[0:train_size], data[train_size:]
+  #print('train', train)
+  #print('test',test)
+
+  # Vérification de la stationnarité des séries temporelles (peut être sauté si vos données sont déjà stationnaires)
+  for column in data.columns:
+      result = adfuller(data[column])
+      print(f'ADF Statistic for {column}: {result[0]}, p-value: {result[1]}')
+
+  # Création et ajustement du modèle VAR
+  model = VAR(train)
+  model_fitted = model.fit()
+
+  # Prévisions sur l'ensemble de test
+  lags = model_fitted.k_ar
+  print('best lags : ', lags)
+  forecast = model_fitted.forecast(train.values[-lags:], steps=len(test))
+
+  # Création d'un DataFrame pour les prévisions
+  forecast_df = pd.DataFrame(forecast, columns=[f'Forecast_{pair1}', f'Forecast_{pair2}'], index=test.index)
+
+  # Évaluation des performances avec RMSE
+
+  for i, col in enumerate(data.columns):
+      rmse_val = rmse(test[col], forecast_df[f'Forecast_{col}'])
+      print(f'RMSE for {col}: {rmse_val}')
+
+  # Visualisation des résultats
+  plt.figure(figsize=(12, 6))
+  '''
+  for col in data.columns:
+      plt.plot(test.index, test[col], label=f'Actual {col}')
+      plt.plot(test.index, forecast_df[f'Forecast_{col}'], label=f'Forecast {col}', linestyle='dashed')
+  '''
+  # Calculate upper and lower bounds based on historical volatility
+  historical_volatility = data[f'{pair1}'].std()
+  upper_bound = forecast_df[f'Forecast_{pair1}'] + historical_volatility
+  lower_bound = forecast_df[f'Forecast_{pair1}'] - historical_volatility
+
+  historical_volatility2 = data[f'{pair2}'].std()
+  upper_bound2 = forecast_df[f'Forecast_{pair2}'] + historical_volatility2
+  lower_bound2 = forecast_df[f'Forecast_{pair2}'] - historical_volatility2
+
+  # Assume a confidence interval of 99%
+  confidence_level = 0.99
+
+  # Calculate confidence intervals
+  z_score = 2.576  # for a 95% confidence interval
+  forecast_std = forecast_df[f'Forecast_{pair1}'].std()
+  margin_of_error = z_score * (forecast_std / np.sqrt(len(test)))
+
+  forecast_std2 = forecast_df[f'Forecast_{pair2}'].std()
+  margin_of_error2 = z_score * (forecast_std2 / np.sqrt(len(test)))
+
+  forecast_ci = pd.DataFrame({
+    'lower': forecast_df[f'Forecast_{pair1}'] - margin_of_error,
+    'upper': forecast_df[f'Forecast_{pair1}'] + margin_of_error
+  })
+
+  forecast_ci_upper = pd.DataFrame({
+    'lower': upper_bound - margin_of_error, # Lower IC upper
+    'upper': upper_bound + margin_of_error
+  })
+
+  forecast_ci_lower = pd.DataFrame({
+    'lower': lower_bound - margin_of_error,
+    'upper': lower_bound + margin_of_error # Upper IC lower
+  })
+
+  forecast_ci2 = pd.DataFrame({
+    'lower': forecast_df[f'Forecast_{pair2}'] - margin_of_error2,
+    'upper': forecast_df[f'Forecast_{pair2}'] + margin_of_error2
+  })
+
+  forecast_ci2_upper = pd.DataFrame({
+    'lower': upper_bound2 - margin_of_error, # Lower IC upper
+    'upper': upper_bound2 + margin_of_error
+  })
+
+  forecast_ci2_lower = pd.DataFrame({
+    'lower': lower_bound2 - margin_of_error,
+    'upper': lower_bound2 + margin_of_error # Upper IC lower
+  })
+
+  plt.figure(figsize=(12, 6))
+  plt.plot(test.index, test[f'{pair1}'], label=f'Actual {pair1}')
+  plt.plot(test.index, forecast_df[f'Forecast_{pair1}'], label=f'Forecast {pair1}', linestyle='dotted')
+  plt.plot(test.index, upper_bound, label='Upper Bound', linestyle='dashed', color='red')
+  plt.plot(test.index, lower_bound, label='Lower Bound', linestyle='dashed', color='green')
+  plt.fill_between(test.index, forecast_ci['lower'], forecast_ci['upper'], color='gray', alpha=0.2, label='99% Confidence Interval')
+  plt.fill_between(test.index, forecast_ci_upper['lower'], forecast_ci_upper['upper'], color='red', alpha=0.2, label='99% Confidence Interval')
+  plt.fill_between(test.index, forecast_ci_lower['lower'], forecast_ci_lower['upper'], color='green', alpha=0.2, label='99% Confidence Interval')
+  plt.legend()
+  plt.title('VAR Model - Forecast vs Actual')
+  plt.show()
+
+  plt.figure(figsize=(12, 6))
+  plt.plot(test.index, test[f'{pair2}'], label=f'Actual {pair2}')
+  plt.plot(test.index, forecast_df[f'Forecast_{pair2}'], label=f'Forecast {pair2}', linestyle='dotted')
+  plt.plot(test.index, upper_bound2, label='Upper Bound', linestyle='dashed', color='red')
+  plt.plot(test.index, lower_bound2, label='Lower Bound', linestyle='dashed', color='green')
+  plt.fill_between(test.index, forecast_ci2['lower'], forecast_ci2['upper'], color='gray', alpha=0.2, label='99% Confidence Interval')
+  plt.fill_between(test.index, forecast_ci2_upper['lower'], forecast_ci2_upper['upper'], color='red', alpha=0.2, label='99% Confidence Interval')
+  plt.fill_between(test.index, forecast_ci2_lower['lower'], forecast_ci2_lower['upper'], color='green', alpha=0.2, label='99% Confidence Interval')
+  plt.legend()
+  plt.title('VAR Model - Forecast vs Actual')
+  plt.show()
+  #print(forecast_df)
+  return forecast_df,forecast_ci,forecast_ci_upper['lower'],forecast_ci_lower['upper'],forecast_ci2,forecast_ci2_upper['lower'],forecast_ci2_lower['upper']
+
+def backtest(pair1,pair2,df):
+  df_histo = df
+  forecast ,pred_IC ,UB_lower ,LB_upper , pred_IC_2, UB_lower_2, LB_upper_2 = VAR_pred(pair1,pair2)
+  achat = 0
+  vente = 0
+  ptf = 100
+  L_ptf = []
+  entry = []
+  close = []
+  type_trade = []
+  for i in range(1,3):
+    if i == 1:
+      in_trade_long = False
+      in_trade_short = False
+      pair = pair1
+      IC = pred_IC
+      UB = UB_lower
+      LB = LB_upper
+    else:
+      in_trade_long = False
+      in_trade_short = False
+      pair = pair2
+      IC = pred_IC_2
+      UB = UB_lower_2
+      LB = LB_upper_2
+
+    for i in range(len(forecast)):
+        if in_trade_long == True or in_trade_short == True:
+          if df_histo[pair].tail(len(forecast)).iloc[i] > IC['lower'].iloc[i] and in_trade_long == True:  #Close long
+            in_trade_long = False
+            vente = df_histo[pair].tail(len(forecast)).iloc[i]
+            ptf += ptf*(vente-achat)
+            L_ptf.append(ptf)
+            close.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+
+          elif df_histo[pair].tail(len(forecast)).iloc[i] < IC['upper'].iloc[i] and in_trade_short == True:  #Close short
+            in_trade_short = False
+            achat = df_histo[pair].tail(len(forecast)).iloc[i]
+            ptf += ptf*(vente-achat)
+            L_ptf.append(ptf)
+            close.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+        else:
+          if df_histo[pair].tail(len(forecast)).iloc[i] < LB.iloc[i]: #Long gbp
+            in_trade_long = True
+            achat = df_histo[pair].tail(len(forecast)).iloc[i]
+            entry.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+            type_trade.append('Long')
+
+          elif df_histo[pair].tail(len(forecast)).iloc[i] > UB.iloc[i]: #Short gbp
+            in_trade_short = True
+            vente = df_histo[pair].tail(len(forecast)).iloc[i]
+            entry.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+            type_trade.append('Short')
+    if in_trade_long == True or in_trade_short == True:
+      close.append('NaN')
+      L_ptf.append('NaN')
+    # if in_trade_long == True or in_trade_short == True:
+    #     if df_histo[pair].tail(len(forecast)).iloc[i] > IC['lower'].iloc[i] and in_trade_long == True:  #Close long
+    #         in_trade_long = False
+    #         vente = df_histo[pair].tail(len(forecast)).iloc[i]
+    #         ptf += ptf*(vente-achat)
+    #         close.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+    #     elif df_histo[pair].tail(len(forecast)).iloc[i] < IC['upper'].iloc[i] and in_trade_short == True:  #Close short
+    #         in_trade_short = False
+    #         achat = df_histo[pair].tail(len(forecast)).iloc[i]
+    #         ptf += ptf*(vente-achat)
+    #         close.append((df_histo[pair].tail(len(forecast)).iloc[i],df_histo[pair].tail(len(forecast)).index[i]))
+
+    df_res = pd.DataFrame()
+    df_res['Trade'] = pd.Series(type_trade)
+    df_res['Entry'] = pd.Series(entry)
+    df_res['Close'] = pd.Series(close)
+    df_res['PnL'] = pd.Series(L_ptf)
+
+  return df_res,ptf
+
